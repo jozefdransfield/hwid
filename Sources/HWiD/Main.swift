@@ -7,20 +7,23 @@ struct Main {
         
         let logger = Logger(label:"HWiD")
 
-        let meh = HWiD(logger: logger)
+        let hWiD = HWiD(logger: logger)
         
-        
-        for await data in meh.speed {
-            print("Found Dataz here! \(data)")
+        let task1 = Task {
+            for await data in hWiD.speed {
+                print("Found Dataz here! \(data)")
+            }
         }
+        
+        let task2 = Task {
+            for await data in hWiD.carId {
+                print("Found a car! \(data)")
+            }
+        }
+        
+        await task1.value
+        await task2.value
     
     }
 }
 
-
-extension Data {
-    var toFloat: Float? {
-        guard count >= 4 else { return nil }
-        return withUnsafeBytes { $0.load(as: Float.self) }
-    }
-}

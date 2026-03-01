@@ -12,7 +12,6 @@ class HWiD: NSObject{
     var isConnected = false
     var discoveredDevices: [CBPeripheral] = []
     
-    
     let advertisedServiceUUID = CBUUID(string: "AF0A6EC7-0001-000A-84A0-91559FC6F0DE")
     
     let serviceUUID = CBUUID(string: "af0a6ec7-0001-000c-84a0-91559fc6f0de")
@@ -21,14 +20,21 @@ class HWiD: NSObject{
     
     let speedCharacteristicUUID = CBUUID(string: "af0a6ec7-0006-000c-84a0-91559fc6f0de")
     
-    private var continuation: AsyncStream<Float>.Continuation?
+    private var speedContinuation: AsyncStream<Float>.Continuation?
     
     lazy var speed: AsyncStream<Float> = {
         AsyncStream { continuation in
-            self.continuation = continuation
+            self.speedContinuation = continuation
         }
     }()
     
+    private var carIdContinuation: AsyncStream<Data>.Continuation?
+    
+    lazy var carId: AsyncStream<Data> = {
+        AsyncStream { continuation in
+            self.carIdContinuation = continuation
+        }
+    }()
     
     init(logger: Logger) {
         self.logger = logger
@@ -36,10 +42,10 @@ class HWiD: NSObject{
         centralManager = CBCentralManager(delegate: self, queue: .main)
     }
     
-    func startScanning() {
+    private func startScanning() {
         guard centralManager.state == .poweredOn else { return }
         
-        logger.info(Logger.Message("Scanning for peripherals..."))
+        logger.info("Scanning for peripherals...")
         
         centralManager.scanForPeripherals(
             withServices: [advertisedServiceUUID],
@@ -47,30 +53,34 @@ class HWiD: NSObject{
         )
     }
     
-    func stopScanning() {
+    private func stopScanning() {
         centralManager.stopScan()
         logger.info("Stopped scanning")
     }
     
-    func connect(to peripheral: CBPeripheral) {
+    private func connect(to peripheral: CBPeripheral) {
         self.peripheral = peripheral
         self.peripheral?.delegate = self
         centralManager.connect(peripheral, options: nil)
     }
     
-    func updateSpeed(value: Float) {
-        continuation?.yield(value)
+    private func updateSpeed(value: Float) {
+        speedContinuation?.yield(value)
+    }
+    
+    private func updateCarId(value: Data) {
+        carIdContinuation?.yield(value)
     }
 }
 
 extension HWiD: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
-        case .poweredOn:  print("Bluetooth is ON"); startScanning()
-        case .poweredOff: print("Bluetooth is OFF")
-        case .unauthorized: print("Bluetooth unauthorized")
-        case .unsupported: print("Bluetooth not supported")
-        default: print("Unknown state")
+        case .poweredOn:  logger.info("Bluetooth is ON"); startScanning()
+        case .poweredOff: logger.info("Bluetooth is OFF")
+        case .unauthorized: logger.info("Bluetooth unauthorized")
+        case .unsupported: logger.info("Bluetooth not supported")
+        default: logger.info("Unknown state")
         }
     }
     
@@ -141,9 +151,19 @@ extension HWiD: CBPeripheralDelegate {
         
         switch(characteristic.uuid) {
         case speedCharacteristicUUID:
-            self.updateSpeed(value: data.toFloat!)
+            self.updateSpeed(value: data.toFloat!) // TODO: Fix the bang
+        case carIdCharacteristicUUID:
+            self.updateCarId(value: data)
         default:
             logger.info("Raw data: \(data.map { String(format: "%02X", $0) }.joined(separator: " "))")
         }
+    }
+}
+
+
+extension Data {
+    var toFloat: Float? {
+        guard count >= 4 else { return nil }
+        return withUnsafeBytes { $0.load(as: Float.self) }
     }
 }
