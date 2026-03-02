@@ -1,7 +1,7 @@
 import CoreBluetooth
 import Logging
 
-class BluetoothHWiDConnection : NSObject, HWiDConnection {
+class BluetoothHWiDConnection : NSObject {
     
     private var centralManager: CBCentralManager!
     private var peripheral: CBPeripheral?
