@@ -1,4 +1,4 @@
-public enum HWiDStatus {
+public enum HWiDStatus : CaseIterable {
     case scanning
     case poweredOn
     case poweredOff
