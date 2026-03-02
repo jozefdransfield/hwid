@@ -42,13 +42,20 @@ public class HWiD {
             speedContinuation: speedContinuation!
         )
     }
+    
+    public func start() {
+        self.hwidConnection.startScanning()
+    }
 }
 
 public enum HWiDStatus {
     case scanning
+    case poweredOn
     case poweredOff
     case connected
     case disconnected
+    case unauthorized
+    case notSupported
     case error
 }
 
@@ -89,7 +96,7 @@ private class HWiDConnection : NSObject {
         centralManager = CBCentralManager(delegate: self, queue: .main)
     }
     
-    private func startScanning() {
+    func startScanning() {
         guard centralManager.state == .poweredOn else { return }
         
         statusContinuation.yield(HWiDStatus.scanning)
@@ -114,11 +121,11 @@ private class HWiDConnection : NSObject {
 extension HWiDConnection: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
-        case .poweredOn:  startScanning()
+        case .poweredOn:  statusContinuation.yield(.poweredOn)
         case .poweredOff: statusContinuation.yield(.poweredOff)
-        case .unauthorized: logger.info("Bluetooth unauthorized")
-        case .unsupported: logger.info("Bluetooth not supported")
-        default: logger.info("Unknown state")
+        case .unauthorized:  statusContinuation.yield(.unauthorized)
+        case .unsupported: statusContinuation.yield(.notSupported)
+        default: statusContinuation.yield(.error)
         }
     }
     
