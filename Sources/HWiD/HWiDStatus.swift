@@ -1,4 +1,4 @@
-public enum HWiDStatus : CaseIterable {
+public enum HWiDStatus : String, Identifiable, CaseIterable {
     case scanning
     case poweredOn
     case poweredOff
@@ -7,4 +7,6 @@ public enum HWiDStatus : CaseIterable {
     case unauthorized
     case notSupported
     case error
+    
+    public var id: Self { self }
 }
