@@ -10,14 +10,13 @@ public class HWiD {
     
     private var statusContinuation: AsyncStream<HWiDStatus>.Continuation?
     
-    let status: AsyncStream<HWiDStatus>
+    public let status: AsyncStream<HWiDStatus>
     
-    let carId: AsyncStream<Data>
+    public let carId: AsyncStream<Data>
    
-    let speed: AsyncStream<Float>
+    public let speed: AsyncStream<Float>
     
-    
-    init(logger: Logger) {
+    public init(logger: Logger) {
         self.logger = logger
         
         var statusContinuation: AsyncStream<HWiDStatus>.Continuation?
