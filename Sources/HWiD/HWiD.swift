@@ -2,9 +2,58 @@ import CoreBluetooth
 import Foundation
 import Logging
 
-class HWiD: NSObject{
+public class HWiD {
     
     private let logger: Logger
+    
+    private let hwidConnection: HWiDConnection
+    
+    private var statusContinuation: AsyncStream<HWiDStatus>.Continuation?
+    
+    let status: AsyncStream<HWiDStatus>
+    
+    let carId: AsyncStream<Data>
+   
+    let speed: AsyncStream<Float>
+    
+    
+    init(logger: Logger) {
+        self.logger = logger
+        
+        var statusContinuation: AsyncStream<HWiDStatus>.Continuation?
+        var carIdContinuation: AsyncStream<Data>.Continuation?
+        var speedContinuation: AsyncStream<Float>.Continuation?
+        
+        self.status = AsyncStream { continuation in
+                statusContinuation = continuation
+        }
+        
+        self.carId = AsyncStream { continuation in
+            carIdContinuation = continuation
+        }
+        
+        self.speed = AsyncStream { continuation in
+            speedContinuation = continuation
+        }
+
+        self.hwidConnection = HWiDConnection(
+            logger: logger,
+            statusContinuation: statusContinuation!,
+            carIdContinuation: carIdContinuation!,
+            speedContinuation: speedContinuation!
+        )
+    }
+}
+
+public enum HWiDStatus {
+    case scanning
+    case poweredOff
+    case connected
+    case disconnected
+    case error
+}
+
+private class HWiDConnection : NSObject {
     
     private var centralManager: CBCentralManager!
     private var peripheral: CBPeripheral?
@@ -20,24 +69,23 @@ class HWiD: NSObject{
     
     let speedCharacteristicUUID = CBUUID(string: "af0a6ec7-0006-000c-84a0-91559fc6f0de")
     
-    private var speedContinuation: AsyncStream<Float>.Continuation?
+    private let logger: Logger
     
-    lazy var speed: AsyncStream<Float> = {
-        AsyncStream { continuation in
-            self.speedContinuation = continuation
-        }
-    }()
+    private let statusContinuation: AsyncStream<HWiDStatus>.Continuation
+    private let carIdContinuation: AsyncStream<Data>.Continuation
+    private let speedContinuation: AsyncStream<Float>.Continuation
     
-    private var carIdContinuation: AsyncStream<Data>.Continuation?
-    
-    lazy var carId: AsyncStream<Data> = {
-        AsyncStream { continuation in
-            self.carIdContinuation = continuation
-        }
-    }()
-    
-    init(logger: Logger) {
+    init(
+        logger: Logger,
+        statusContinuation: AsyncStream<HWiDStatus>.Continuation,
+        carIdContinuation: AsyncStream<Data>.Continuation,
+        speedContinuation: AsyncStream<Float>.Continuation
+        ) {
         self.logger = logger
+        self.statusContinuation = statusContinuation
+        self.carIdContinuation = carIdContinuation
+        self.speedContinuation = speedContinuation
+        
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: .main)
     }
@@ -45,7 +93,7 @@ class HWiD: NSObject{
     private func startScanning() {
         guard centralManager.state == .poweredOn else { return }
         
-        logger.info("Scanning for peripherals...")
+        statusContinuation.yield(HWiDStatus.scanning)
         
         centralManager.scanForPeripherals(
             withServices: [advertisedServiceUUID],
@@ -55,7 +103,6 @@ class HWiD: NSObject{
     
     private func stopScanning() {
         centralManager.stopScan()
-        logger.info("Stopped scanning")
     }
     
     private func connect(to peripheral: CBPeripheral) {
@@ -63,21 +110,13 @@ class HWiD: NSObject{
         self.peripheral?.delegate = self
         centralManager.connect(peripheral, options: nil)
     }
-    
-    private func updateSpeed(value: Float) {
-        speedContinuation?.yield(value)
-    }
-    
-    private func updateCarId(value: Data) {
-        carIdContinuation?.yield(value)
-    }
 }
 
-extension HWiD: CBCentralManagerDelegate {
+extension HWiDConnection: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
-        case .poweredOn:  logger.info("Bluetooth is ON"); startScanning()
-        case .poweredOff: logger.info("Bluetooth is OFF")
+        case .poweredOn:  startScanning()
+        case .poweredOff: statusContinuation.yield(.poweredOff)
         case .unauthorized: logger.info("Bluetooth unauthorized")
         case .unsupported: logger.info("Bluetooth not supported")
         default: logger.info("Unknown state")
@@ -102,6 +141,8 @@ extension HWiD: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager,
                         didConnect peripheral: CBPeripheral) {
         logger.info("Connected to \(peripheral.name ?? "device")")
+        statusContinuation.yield(.connected)
+        
         isConnected = true
         peripheral.discoverServices([serviceUUID])
     }
@@ -110,12 +151,13 @@ extension HWiD: CBCentralManagerDelegate {
                         didFailToConnect peripheral: CBPeripheral,
                         error: Error?) {
         logger.info("Failed to connect: \(error?.localizedDescription ?? "unknown error")")
+        statusContinuation.yield(.error)
     }
     
     func centralManager(_ central: CBCentralManager,
                         didDisconnectPeripheral peripheral: CBPeripheral,
                         error: Error?) {
-        logger.info("Disconnected")
+        statusContinuation.yield(.disconnected)
         isConnected = false
         self.peripheral = nil
     }
@@ -123,7 +165,7 @@ extension HWiD: CBCentralManagerDelegate {
 }
 
 
-extension HWiD: CBPeripheralDelegate {
+extension HWiDConnection: CBPeripheralDelegate {
     
     func peripheral(_ peripheral: CBPeripheral,
                     didDiscoverServices error: Error?) {
@@ -151,9 +193,9 @@ extension HWiD: CBPeripheralDelegate {
         
         switch(characteristic.uuid) {
         case speedCharacteristicUUID:
-            self.updateSpeed(value: data.toFloat!) // TODO: Fix the bang
+            speedContinuation.yield(data.toFloat!) // TODO: Fix the bang
         case carIdCharacteristicUUID:
-            self.updateCarId(value: data)
+            carIdContinuation.yield(data)
         default:
             logger.info("Raw data: \(data.map { String(format: "%02X", $0) }.joined(separator: " "))")
         }

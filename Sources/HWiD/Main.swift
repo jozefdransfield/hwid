@@ -9,6 +9,12 @@ struct Main {
 
         let hWiD = HWiD(logger: logger)
         
+        let task0 = Task {
+            for await data in hWiD.status {
+                print("Status: \(data)")
+            }
+        }
+        
         let task1 = Task {
             for await data in hWiD.speed {
                 print("Found Dataz here! \(data)")
